@@ -1,1 +1,507 @@
-Hello CloudFlare
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AI 日报">
+<meta name="format-detection" content="telephone=no">
+<meta name="robots" content="noindex">
+<title>AI 日报 · 语音播报</title>
+<style>
+  :root{
+    --bg:#0d1117; --bg2:#161b22; --line:#232a33;
+    --fg:#e6edf3; --dim:#7d8590; --dim2:#5a626c;
+    --accent:#3fb950; --accent-dim:#1f6f33;
+    --pad-b: calc(env(safe-area-inset-bottom, 0px) + 96px);
+    --pad-t: env(safe-area-inset-top, 0px);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;overscroll-behavior:none}
+  body{
+    background:var(--bg); color:var(--fg);
+    font:16px/1.75 -apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB",
+         "Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
+    display:flex; flex-direction:column; height:100%;
+    touch-action:manipulation;
+    -webkit-text-size-adjust:100%;
+  }
+
+  /* ── 顶栏 ── */
+  header{
+    flex:none; padding:calc(var(--pad-t) + 8px) 14px 10px;
+    background:rgba(13,17,23,.86); backdrop-filter:saturate(180%) blur(14px);
+    -webkit-backdrop-filter:saturate(180%) blur(14px);
+    border-bottom:1px solid var(--line); z-index:20;
+  }
+  .daterow{display:flex; align-items:center; gap:8px}
+  .daterow .nav{
+    flex:none; width:38px; height:38px; border-radius:11px;
+    background:var(--bg2); color:var(--fg); border:1px solid var(--line);
+    font-size:19px; line-height:1; display:grid; place-items:center; cursor:pointer;
+  }
+  .daterow .nav:active{background:#20262e}
+  .daterow input[type=date]{
+    flex:1; min-width:0; height:38px; padding:0 12px; text-align:center;
+    background:var(--bg2); color:var(--fg); border:1px solid var(--line);
+    border-radius:11px; font-size:15px; font-family:inherit;
+    -webkit-appearance:none; appearance:none;
+  }
+  .meta{
+    display:flex; align-items:center; gap:8px; margin-top:9px;
+    font-size:12.5px; color:var(--dim); min-height:16px;
+  }
+  .meta .dot{width:3px;height:3px;border-radius:50%;background:var(--dim2)}
+  .meta .grow{flex:1}
+  .meta button{
+    background:none;border:1px solid var(--line);border-radius:8px;color:var(--dim);
+    font:inherit;font-size:12.5px;padding:2px 9px;cursor:pointer;font-family:inherit;
+  }
+  .meta button:active{color:var(--fg);border-color:var(--dim2)}
+
+  /* ── 字幕区 ── */
+  main{
+    flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch;
+    overscroll-behavior:contain; scroll-behavior:smooth;
+    padding:18px 18px var(--pad-b);
+  }
+  .cue{
+    margin:0 0 2px; padding:7px 12px 7px 14px;
+    color:var(--dim); font-size:16.5px; line-height:1.8;
+    border-left:3px solid transparent; border-radius:0 8px 8px 0;
+    transition:color .18s, background-color .18s, border-color .18s;
+    cursor:pointer;
+  }
+  .cue.para{margin-top:20px}
+  .cue.on{
+    color:#fff; font-size:17.5px; font-weight:600;
+    background:rgba(63,185,80,.07); border-left-color:var(--accent);
+  }
+  .cue.past{color:var(--dim2)}
+
+  /* ── 底栏 ── */
+  footer{
+    flex:none; position:relative; z-index:20;
+    background:rgba(13,17,23,.9); backdrop-filter:saturate(180%) blur(14px);
+    -webkit-backdrop-filter:saturate(180%) blur(14px);
+    border-top:1px solid var(--line);
+    padding:0 14px calc(env(safe-area-inset-bottom, 0px) + 10px);
+  }
+  .track{position:relative; height:22px; margin:0 -14px; cursor:pointer}
+  .track .rail{position:absolute;top:10px;left:0;right:0;height:3px;background:#242b34}
+  .track .fill{position:absolute;top:10px;left:0;height:3px;background:var(--accent);width:0}
+  .track .knob{
+    position:absolute;top:5.5px;width:12px;height:12px;margin-left:-6px;border-radius:50%;
+    background:var(--accent); box-shadow:0 0 0 3px rgba(63,185,80,.18); left:0;
+  }
+  .times{display:flex; justify-content:space-between; font-size:11.5px; color:var(--dim); margin:-4px 0 8px; font-variant-numeric:tabular-nums}
+  .ctrls{display:flex; align-items:center; justify-content:space-between; gap:10px}
+  .ctrls button{
+    background:var(--bg2); color:var(--fg); border:1px solid var(--line);
+    border-radius:13px; font-family:inherit; font-size:13.5px; font-weight:500;
+    height:50px; flex:1; min-width:0; cursor:pointer;
+    display:grid; place-items:center; padding:0;
+  }
+  .ctrls button:active{background:#20262e; transform:scale(.97)}
+  .ctrls button:disabled{opacity:.35}
+  .ctrls #play{
+    flex:0 0 66px; height:66px; border-radius:50%;
+    background:var(--accent); color:#04180a; border:none; font-size:24px;
+  }
+  .ctrls #play:active{background:#4ac95e}
+  .ctrls .sm{font-size:12.5px}
+
+  /* ── 状态层 ── */
+  #state{
+    position:absolute; inset:0; display:none; place-items:center; text-align:center;
+    background:var(--bg); z-index:40; padding:32px;
+  }
+  #state.show{display:grid}
+  #state .box{max-width:330px}
+  #state .big{font-size:34px; margin-bottom:14px; opacity:.5}
+  #state h2{font-size:17px; margin:0 0 8px; font-weight:600}
+  #state p{font-size:14px; color:var(--dim); margin:0 0 18px; line-height:1.7}
+  #state button{
+    background:var(--bg2); color:var(--fg); border:1px solid var(--line);
+    border-radius:11px; padding:11px 22px; font:inherit; font-size:14.5px; cursor:pointer;
+  }
+  .spin{
+    width:26px;height:26px;border:2.5px solid var(--line);border-top-color:var(--accent);
+    border-radius:50%;animation:sp .8s linear infinite;margin:0 auto 14px;
+  }
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* ── 回到当前句 ── */
+  #jump{
+    position:absolute; left:50%; transform:translateX(-50%);
+    bottom:calc(env(safe-area-inset-bottom, 0px) + 128px);
+    background:rgba(35,42,51,.95); color:var(--fg); border:1px solid var(--line);
+    border-radius:999px; padding:9px 17px; font:inherit; font-size:13px;
+    z-index:30; display:none; cursor:pointer; backdrop-filter:blur(10px);
+  }
+  #jump.show{display:block}
+  #toast{
+    position:absolute; left:50%; transform:translateX(-50%);
+    bottom:calc(env(safe-area-inset-bottom, 0px) + 140px);
+    background:rgba(35,42,51,.96); border:1px solid var(--line); color:var(--fg);
+    padding:9px 17px; border-radius:999px; font-size:13px; z-index:50;
+    opacity:0; transition:opacity .25s; pointer-events:none; white-space:nowrap;
+  }
+  #toast.show{opacity:1}
+  @media (min-width:620px){
+    header,footer{max-width:720px;margin:0 auto;width:100%}
+    main{max-width:720px;margin:0 auto;width:100%}
+    body{background:#0a0e14}
+  }
+  @media (prefers-reduced-motion:reduce){
+    main{scroll-behavior:auto}
+    .cue{transition:none}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="daterow">
+    <button class="nav" id="prevDay" aria-label="前一天">‹</button>
+    <input type="date" id="datePick" aria-label="选择日期">
+    <button class="nav" id="nextDay" aria-label="后一天">›</button>
+  </div>
+  <div class="meta">
+    <span id="mDate">—</span>
+    <span class="dot"></span>
+    <span id="mCues">—</span>
+    <span class="grow"></span>
+    <button id="rate" title="播放速度">1×</button>
+  </div>
+</header>
+
+<main id="script"></main>
+<button id="jump">回到当前句 ↓</button>
+<div id="toast"></div>
+
+<footer>
+  <div class="track" id="track" role="slider" aria-label="播放进度">
+    <div class="rail"></div><div class="fill" id="fill"></div><div class="knob" id="knob"></div>
+  </div>
+  <div class="times"><span id="tNow">0:00</span><span id="tAll">0:00</span></div>
+  <div class="ctrls">
+    <button id="back10" class="sm">−10s</button>
+    <button id="prevCue" class="sm">⟨ 句</button>
+    <button id="play" aria-label="播放">▶</button>
+    <button id="nextCue" class="sm">句 ⟩</button>
+    <button id="fwd10" class="sm">+10s</button>
+  </div>
+</footer>
+
+<div id="state"><div class="box" id="stateBox"></div></div>
+<audio id="audio" preload="metadata" playsinline></audio>
+
+<script>
+(function(){
+'use strict';
+
+/* ── 配置 ────────────────────────────────────────────────
+   这份页面会同时部署在两个地方，所以**按顺序**找字幕数据：
+
+     1) 同源 ./data/<date>.json   ← GitHub Pages（数据随页面一起提交进仓库）
+     2) R2  <R2>/voices/cues/…    ← R2 上那份备份（需要桶开启了 CORS）
+
+   为什么优先同源：GitHub Pages 与 R2 **不同源**，而 R2 默认
+   不返回 Access-Control-Allow-Origin，跨域 fetch 会被浏览器直接拦掉
+   —— 症状是"页面能开、音频能放，但字幕永远不出来"。数据放同源就绕开了这件事。
+   音频不走 fetch（<audio> 不吃 CORS），所以语音一直留在 R2，仓库不会变大。
+
+   `?base=<R2前缀>` 可强制只从 R2 取（本地 file:// 调试用）。
+   ──────────────────────────────────────────────────────── */
+var QS     = new URLSearchParams(location.search);
+var R2     = 'https://pub-59de1846850c42b2a596147951b586bf.r2.dev';
+var FORCED = (QS.get('base') || '').replace(/\/+$/,'');
+
+function sources(date){
+  if(FORCED) return [FORCED + '/voices/cues/' + date + '.json'];
+  return ['./data/' + date + '.json', R2 + '/voices/cues/' + date + '.json'];
+}
+
+var $ = function(id){ return document.getElementById(id); };
+var audio = $('audio'), main = $('script');
+
+var data = null;        // 当日 JSON
+var els  = [];          // 每条 cue 的 DOM
+var cur  = -1;          // 当前高亮下标
+var manualUntil = 0;    // 用户手动滚动后的静默期
+var progUntil = 0;      // 程序自动滚动的窗口（窗口内的 scroll 事件不算「用户滚动」）
+var dragging = false;
+var rates = [1, 1.25, 1.5, 0.8], rateIdx = 0;
+function rateLabel(r){ return (r === Math.floor(r) ? r.toFixed(0) : String(r)) + '×'; }
+
+/* ── 工具 ── */
+function todayCN(){
+  var d = new Date(Date.now() + 8*3600*1000);   // 固定按北京时间
+  return d.toISOString().slice(0,10);
+}
+function mmss(s){
+  if(!isFinite(s) || s < 0) s = 0;
+  var m = Math.floor(s/60), x = Math.floor(s%60);
+  return m + ':' + (x<10?'0':'') + x;
+}
+function shiftDate(iso, delta){
+  var d = new Date(iso + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0,10);
+}
+function toast(msg){
+  var t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._h); toast._h = setTimeout(function(){ t.classList.remove('show'); }, 1700);
+}
+
+/* ── 状态层 ── */
+function showState(html){ $('stateBox').innerHTML = html; $('state').classList.add('show'); }
+function hideState(){ $('state').classList.remove('show'); }
+function loading(){
+  showState('<div class="spin"></div><h2>正在加载</h2><p id="loadDate"></p>');
+  var el = $('loadDate'); if(el) el.textContent = currentDate();
+}
+function notFound(date){
+  showState('<div class="big">🎧</div><h2>这天还没有语音播报</h2>' +
+            '<p>'+ date +' 没有生成记录。<br>试试相邻的日期。</p>' +
+            '<button id="stRetry">重新加载</button>');
+  bindStateRetry();
+}
+function failed(msg){
+  showState('<div class="big">⚠️</div><h2>加载失败</h2><p>'+ msg +'</p>' +
+            '<button id="stRetry">重试</button>');
+  bindStateRetry();
+}
+function bindStateRetry(){
+  var b = $('stRetry');
+  if(b) b.onclick = function(){ hideState(); load(currentDate(), true); };
+}
+
+/* ── 取日期 ── */
+function currentDate(){
+  var d = QS.get('date');
+  return /^\d{4}-\d{2}-\d{2}$/.test(d || '') ? d : todayCN();
+}
+function setDate(date, push){
+  if(push !== false){
+    var u = new URL(location.href);
+    u.searchParams.set('date', date);
+    history.replaceState(null, '', u);
+  }
+  $('datePick').value = date;
+}
+
+/* ── 加载 ── */
+function load(date, force){
+  setDate(date, true);
+  loading();
+  audio.pause();
+  data = null; els = []; cur = -1; main.innerHTML = '';
+
+  var list = sources(date), i = 0, last = null;
+  function done(){
+    if(last && last.code === 404) notFound(date);
+    else failed('试过的地址都失败了：<br>' + list.join('<br>'));
+  }
+  (function next(){
+    if(i >= list.length){ done(); return; }
+    var url = list[i++];
+    fetch(url, { cache: force ? 'reload' : 'default' })
+      .then(function(r){
+        if(!r.ok) throw {code:r.status, url:url};
+        return r.json();
+      })
+      .then(function(j){
+        if(!j || !j.cues || !j.cues.length) throw {code:404, url:url};
+        data = j; render(); hideState();
+      })
+      .catch(function(e){ last = e || {}; next(); });
+  })();
+}
+
+/* ── 渲染 ── */
+function render(){
+  document.title = 'AI 日报 · ' + data.date;
+  $('datePick').value = data.date;
+  $('mDate').textContent = data.date;
+  $('mCues').textContent = data.cues.length + ' 句' +
+        (data.voice ? ' · ' + data.voice : '');
+
+  var frag = document.createDocumentFragment();
+  data.cues.forEach(function(c, i){
+    var p = document.createElement('p');
+    p.className = 'cue' + (c.para ? ' para' : '');
+    p.textContent = c.text;
+    p.addEventListener('click', function(){ seekCue(i); });
+    frag.appendChild(p); els.push(p);
+  });
+  main.appendChild(frag);
+
+  audio.src = data.audio;
+  audio.playbackRate = rates[rateIdx];
+  $('tAll').textContent = mmss(data.duration);
+  updateTrack(0);
+
+  if('mediaSession' in navigator){
+    try{
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: 'AI 日报 ' + data.date,
+        artist: (data.voice || '') + ' · 语音播报',
+        album: '每日 AI 资讯'
+      });
+      navigator.mediaSession.setActionHandler('previoustrack', function(){ jumpCue(-1); });
+      navigator.mediaSession.setActionHandler('nexttrack',     function(){ jumpCue(1);  });
+      navigator.mediaSession.setActionHandler('seekbackward',  function(){ nudge(-10);  });
+      navigator.mediaSession.setActionHandler('seekforward',   function(){ nudge(10);   });
+    }catch(e){}
+  }
+  main.scrollTop = 0;
+}
+
+/* ── 同步核心：给定时间，二分找「最后一条已开始」的 cue ── */
+function cueAt(t){
+  if(!data) return -1;
+  var lo = 0, hi = data.cues.length - 1, ans = 0;
+  while(lo <= hi){
+    var m = (lo + hi) >> 1;
+    if(data.cues[m].t0 <= t){ ans = m; lo = m + 1; } else hi = m - 1;
+  }
+  return ans;
+}
+
+function paint(i){
+  if(i === cur || !els.length) return;
+  if(cur >= 0 && els[cur]){
+    els[cur].classList.remove('on');
+    els[cur].classList.add('past');
+  }
+  cur = i;
+  if(els[i]){
+    els[i].classList.remove('past');
+    els[i].classList.add('on');
+    if(Date.now() > manualUntil) scrollTo(i);
+  }
+}
+
+function scrollTo(i){
+  var el = els[i]; if(!el) return;
+  var top = el.offsetTop - main.clientHeight * 0.42 + el.offsetHeight / 2;
+  var reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  progUntil = Date.now() + (reduce ? 120 : 800);   // 这段窗口内的 scroll 是自己触发的
+  main.scrollTo({ top: Math.max(0, top), behavior: reduce ? 'auto' : 'smooth' });
+}
+
+/* ── 播放控制 ── */
+function seekCue(i){
+  if(!data) return;
+  i = Math.max(0, Math.min(i, data.cues.length - 1));
+  audio.currentTime = data.cues[i].t0 + 0.01;
+  paint(i); scrollTo(i);
+  if(audio.paused) play();
+}
+function jumpCue(dir){
+  if(!data) return;
+  var i = cueAt(audio.currentTime);
+  if(dir < 0 && audio.currentTime - data.cues[i].t0 > 1.5) seekCue(i);  // 句中→回句首
+  else seekCue(i + dir);
+}
+function nudge(sec){
+  audio.currentTime = Math.max(0, Math.min((data ? data.duration : 1e9), audio.currentTime + sec));
+}
+function play(){ audio.play().catch(function(){ toast('点一下播放键开始'); }); }
+function toggle(){
+  if(!data){ load(currentDate(), true); return; }
+  if(audio.paused) play(); else audio.pause();
+}
+
+/* ── 进度条 ── */
+function updateTrack(t){
+  var dur = data ? data.duration : 0;
+  var pct = dur ? Math.min(100, t / dur * 100) : 0;
+  $('fill').style.width = pct + '%';
+  $('knob').style.left  = pct + '%';
+  $('tNow').textContent = mmss(t);
+}
+function seekFromEvent(e){
+  if(!data) return;
+  var r = $('track').getBoundingClientRect();
+  var x = (e.touches ? e.touches[0].clientX : e.clientX) - r.left;
+  var pct = Math.max(0, Math.min(1, x / r.width));
+  audio.currentTime = pct * data.duration;
+  updateTrack(audio.currentTime);
+}
+
+/* ── 事件绑定 ── */
+audio.addEventListener('timeupdate', function(){
+  if(!data) return;
+  var t = audio.currentTime;
+  updateTrack(t);
+  paint(cueAt(t));
+});
+audio.addEventListener('loadedmetadata', function(){
+  if(data && !data.duration && isFinite(audio.duration)) data.duration = audio.duration;
+  $('tAll').textContent = mmss(data ? data.duration : audio.duration);
+});
+audio.addEventListener('play',  function(){ $('play').textContent = '❚❚'; $('play').setAttribute('aria-label','暂停'); });
+audio.addEventListener('pause', function(){ $('play').textContent = '▶';  $('play').setAttribute('aria-label','播放'); });
+audio.addEventListener('ended', function(){ $('play').textContent = '↻'; });
+audio.addEventListener('error', function(){ if(data) toast('音频加载失败'); });
+
+$('play').onclick    = toggle;
+$('back10').onclick  = function(){ nudge(-10); };
+$('fwd10').onclick   = function(){ nudge(10); };
+$('prevCue').onclick = function(){ jumpCue(-1); };
+$('nextCue').onclick = function(){ jumpCue(1); };
+
+$('rate').onclick = function(){
+  rateIdx = (rateIdx + 1) % rates.length;
+  audio.playbackRate = rates[rateIdx];
+  this.textContent = rateLabel(rates[rateIdx]);
+  toast('播放速度 ' + rates[rateIdx] + '×');
+};
+
+$('prevDay').onclick = function(){ load(shiftDate(currentDate(), -1)); };
+$('nextDay').onclick = function(){ load(shiftDate(currentDate(),  1)); };
+$('datePick').onchange = function(){ load(this.value); };
+
+/* 进度条拖拽 */
+var track = $('track');
+track.addEventListener('pointerdown', function(e){ dragging = true; seekFromEvent(e); track.setPointerCapture(e.pointerId); });
+track.addEventListener('pointermove', function(e){ if(dragging) seekFromEvent(e); });
+track.addEventListener('pointerup',   function(e){ dragging = false; });
+track.addEventListener('pointercancel', function(){ dragging = false; });
+
+/* 用户手动滚动时，暂停自动跟随 4 秒，并露出「回到当前句」 */
+main.addEventListener('scroll', function(){
+  if(Date.now() < progUntil) return;            // 程序自动滚动触发的不算「用户在滚」
+  manualUntil = Date.now() + 4000;
+  var el = els[cur];
+  if(el){
+    var mid = main.scrollTop + main.clientHeight / 2;
+    var away = Math.abs((el.offsetTop + el.offsetHeight / 2) - mid) > main.clientHeight * 0.6;
+    $('jump').classList.toggle('show', away && !audio.paused);
+  }
+}, {passive:true});
+$('jump').onclick = function(){ manualUntil = 0; progUntil = 0; if(cur >= 0) scrollTo(cur); this.classList.remove('show'); };
+
+/* 键盘（桌面调试用） */
+document.addEventListener('keydown', function(e){
+  if(e.target.tagName === 'INPUT') return;
+  if(e.key === ' ')      { e.preventDefault(); toggle(); }
+  if(e.key === 'ArrowLeft')  nudge(-5);
+  if(e.key === 'ArrowRight') nudge(5);
+  if(e.key === 'ArrowUp')    jumpCue(-1);
+  if(e.key === 'ArrowDown')  jumpCue(1);
+});
+
+/* ── 启动 ── */
+setDate(currentDate(), false);
+load(currentDate());
+})();
+</script>
+</body>
+</html>
