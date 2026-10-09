@@ -262,7 +262,9 @@ function toast(msg){
 function showState(html){ $('stateBox').innerHTML = html; $('state').classList.add('show'); }
 function hideState(){ $('state').classList.remove('show'); }
 function loading(){
-  showState('<div class="spin"></div><h2>正在加载</h2><p id="loadDate"></p>');
+  showState('<div class="spin"></div><h2>正在加载</h2><p id="loadDate"></p>' +
+            '<p style="font-size:12px;opacity:.7;margin-top:-8px">' +
+            '刚推送的日期可能要等十几秒</p>');
   var el = $('loadDate'); if(el) el.textContent = currentDate();
 }
 function notFound(date){
@@ -302,25 +304,41 @@ function load(date, force){
   audio.pause();
   data = null; els = []; cur = -1; main.innerHTML = '';
 
-  var list = sources(date), i = 0, last = null;
-  function done(){
+  // 拿到消息就点开时，GitHub Pages 可能还没构建完 —— 所以 404 要自动重试几轮，
+  // 否则用户看到的是「这天还没有语音播报」，其实数据二十秒后就位了。
+  var list = sources(date);
+  var round = 0, MAX_ROUND = force ? 1 : 4, RETRY_MS = 6000;
+
+  function finish(last){
     if(last && last.code === 404) notFound(date);
     else failed('试过的地址都失败了：<br>' + list.join('<br>'));
   }
-  (function next(){
-    if(i >= list.length){ done(); return; }
-    var url = list[i++];
-    fetch(url, { cache: force ? 'reload' : 'default' })
-      .then(function(r){
-        if(!r.ok) throw {code:r.status, url:url};
-        return r.json();
-      })
-      .then(function(j){
-        if(!j || !j.cues || !j.cues.length) throw {code:404, url:url};
-        data = j; render(); hideState();
-      })
-      .catch(function(e){ last = e || {}; next(); });
-  })();
+  function roundDone(last){
+    round++;
+    if(round < MAX_ROUND && last && last.code === 404){
+      setTimeout(runRound, RETRY_MS);      // 静默重试，不打扰用户
+      return;
+    }
+    finish(last);
+  }
+  function runRound(){
+    var i = 0, last = null;
+    (function next(){
+      if(i >= list.length){ roundDone(last); return; }
+      var url = list[i++];
+      fetch(url, { cache: force ? 'reload' : 'default' })
+        .then(function(r){
+          if(!r.ok) throw {code:r.status, url:url};
+          return r.json();
+        })
+        .then(function(j){
+          if(!j || !j.cues || !j.cues.length) throw {code:404, url:url};
+          data = j; render(); hideState();
+        })
+        .catch(function(e){ last = e || {}; next(); });
+    })();
+  }
+  runRound();
 }
 
 /* ── 渲染 ── */
